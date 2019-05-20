@@ -1,0 +1,42 @@
+body{
+    padding-top: 70px;
+    width: 100%;
+    }
+.logout_button{
+    position: absolute;
+    left: 900px;
+}
+#logout{
+    position: absolute;
+    margin-top: 12px;
+    background:#1f1f1f;
+    color:#939293;
+    border: none;
+
+}
+#logout:hover{
+    color: white;
+}
+#logout:active{
+    color: lawngreen;
+}
+.table_div{
+    border: #3A7734;
+}
+.players{
+    border-top: #000000;
+    width: 100%;
+}
+.seat{
+    padding: 40px;
+    size: 1000px;
+    float: left;
+    margin-right: 20px;
+    border: #1f1f1f 1px;
+}
+.greybd{
+    background-color : white
+}
+.lightGreen{
+    background-color : palegreen;
+}

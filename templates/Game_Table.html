@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    {% extends "Parent.html" %}
+    <meta charset="UTF-8">
+</head>
+{% block content %}
+
+    <script type="text/javascript" src="//code.jquery.com/jquery-1.4.2.min.js"></script>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/socket.io/1.3.5/socket.io.min.js"></script>
+    <script type="text/javascript" charset="utf-8">
+
+        var socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port); //, {transports: ['websocket']});
+
+    $(document).ready(function(){
+        var THIRTY_SECONDS = (1000 * 30);
+        var FORTY_FIVE_SECONDS = (1000 * 45);
+
+        var _data = {"table_id":'{{ table_id }}', "auth":{{auth}}};
+        socket.emit('join', _data);
+        var nameId = 'name'+{{ seat_id }};
+        document.getElementById(nameId).innerHTML = '{{ user_name }}';
+        socket.emit('get_seat_data', _data);
+
+        {#jquery bindings#}
+        $('#get_hand').click(function(){ get_hand(); return false;});
+        $('#stand').click(function () {  stand();});
+        $('#hit').click(function() { hit(); return false;});
+        $('#placeBet').click(function () { placeBet()});
+        $('#split').click(function () { split()});
+        $('#_hit').click(function() { _hit(); return false;});
+        $('#_stand').click(function() { _stand(); return false;});
+
+        $('#turn_UI').hide();
+        $('#betting_UI').hide();
+        $('#sturn_UI').hide();
+
+        {#SOCKET FUNCTIONS#}
+        socket.on('connectToRoom',function(data) {
+            console.log(data);
+        });
+
+        socket.on('seat_data_acquired', function (seats) {
+            console.log(seats);
+            var playerCount = 6;
+            for(var i = 0; i < seats.length; i++) {
+                var id = i + 1;
+                update_player_UI(seats[i], id);
+                if (seats[i]['name'] === "empty") playerCount--;
+            }
+            if(playerCount < 2){ //If no other players, begin betting round
+                var end_bet_by = new Date().getTime() + FORTY_FIVE_SECONDS;
+                var data = {"end_bet_by": end_bet_by, "table_id": '{{ table_id }}'};
+                socket.emit('begin_betting', data);
+            }else{
+                console.log('verifying_game_state');
+                socket.emit('verify_game_state', '{{ table_id }}');
+            }
+
+        });
+        socket.on('info', function (info) {
+           $('#info').html(info);
+        });
+        socket.on('split_info', function (info) {
+           $('#split_info').html(info);
+        });
+
+        socket.on('seat_changed', function(msg) {
+            // $('div#log').append('<p>Seat_Changed: ' + msg['seat'] +' ' + msg['name'] + '</p>');
+            var nameId = 'name'+msg['seat'];
+            document.getElementById(nameId).innerHTML = msg['name'];
+        });
+
+        socket.on('hand_update', function(data){
+           // $('div#log').append('<p>Hand_Update: ' + data['seat'] + ' ' + data['hand'] + '</p>');
+           var handId = '#hand'+data['seat'];
+           var handData = data['hand'];
+           // console.log(handData);
+           var totalId = 'total'+data['seat'];
+           var handTotal = 0;
+           var aces = 0;
+           $(handId).html("");
+           if(data['hand'] === 'empty') return;
+           Object.keys(handData).forEach(function(k){
+               if(handData[k] === 11) aces ++;
+               //$(handId).append('<p>' + k + ': ' + handData[k] + '</p>');
+               //console.log("/static/pictures/cards/"+k+".png");
+               $(handId).append('<img src="/static/pictures/cards/'+k+'.png" width=40 alt='+ k + '/>');
+               handTotal += handData[k];
+           });
+            // Dealer logic happens on server side .py
+           if(handTotal > 21 && aces > 0){ //Switch ace value to 1 if over 21
+               while(handTotal > 21){
+                   handTotal -= 10;
+                   aces --;
+                   if(aces === 0 && handTotal > 21){
+                       document.getElementById(totalId).innerHTML = 'BUST! ' + handTotal;
+                       if(handId == '#hand'+{{ seat_id }});
+                       break;
+                   }
+               }
+               document.getElementById(totalId).innerHTML ='Total: ' + handTotal;
+           }
+           else if(handTotal > 21){
+               document.getElementById(totalId).innerHTML = 'BUST! ' + handTotal;
+               if(handId == '#hand'+{{ seat_id }});
+               return;
+           }else if(handTotal == 21){
+               document.getElementById(totalId).innerHTML = 'BLACK JACK! ' + handTotal;
+               if(handId == '#hand'+{{ seat_id }});
+               return;
+           }else{
+               document.getElementById(totalId).innerHTML ='Total: ' + handTotal;
+           }
+        });
+
+        socket.on('split_hand_update', function(data){
+           // $('div#log').append('<p>Hand_Update: ' + data['seat'] + ' ' + data['hand'] + '</p>');
+           var handId = '#split'+data['seat'];
+           var handData = data['hand'];
+           // console.log(handData);
+           var totalId = 'stotal'+data['seat'];
+           var handTotal = 0;
+           var aces = 0;
+           $(handId).html("");
+           if(data['hand'] === 'empty') return;
+           Object.keys(handData).forEach(function(k){
+               if(handData[k] === 11) aces ++;
+               $(handId).append('<img src="/static/pictures/cards/'+k+'.png" width=40 alt='+ k + '/>');
+               handTotal += handData[k];
+           });
+            // Dealer logic happens on server side .py
+           if(handTotal > 21 && aces > 0){ //Switch ace value to 1 if over 21
+               while(handTotal > 21){
+                   handTotal -= 10;
+                   aces --;
+                   if(aces === 0 && handTotal > 21){
+                       document.getElementById(totalId).innerHTML = 'BUST! ' + handTotal;
+                       if(handId == '#split'+{{ seat_id }});
+                       break;
+                   }
+               }
+               document.getElementById(totalId).innerHTML ='Total: ' + handTotal;
+           }
+           else if(handTotal > 21){
+               document.getElementById(totalId).innerHTML = 'BUST! ' + handTotal;
+               if(handId == '#split'+{{ seat_id }});
+               return;
+           }else if(handTotal == 21){
+               document.getElementById(totalId).innerHTML = 'BLACK JACK! ' + handTotal;
+               if(handId == '#split'+{{ seat_id }});
+               return;
+           }else{
+               document.getElementById(totalId).innerHTML ='Total: ' + handTotal;
+           }
+        });
+
+        socket.on('state_changed', function(state) {
+            console.log("Player " + state + "'s turn");
+            console.log("State var type = " + state.type);
+            state_change(state);
+        });
+
+        socket.on('bet_update', function(data){
+            clearSBetTotal();
+           var betId = '#bet'+data['seat'];
+           $(betId).html('Bet: $'+ data['bet']);
+
+        });
+
+        socket.on('sbet_update', function (data) {
+            var betId = '#sbet'+data['seat'];
+           $(betId).html('Bet: $'+ data['bet']);
+        });
+
+        socket.on('balance_update', function (data) {
+           var balanceId = '#balance'+data['seat'];
+           $(balanceId).html('$'+data['balance']);
+        });
+
+        socket.on('trigger_betting_timer', function(end){
+            beginBettingTimer(end);
+            enableBettingUI();
+            console.log("trigger bet timer " +end);
+        });
+
+        socket.on('enable_split', function () {
+           enableSplitUI();
+        });
+
+        {#END SOCKET FUNCTIONS#}
+
+        function get_hand(){
+            var data = {"table_id":'{{ table_id }}', "auth":{{auth}}};
+            socket.emit('get_hand', data);
+        }
+        function hit() {
+            $('#split').hide();
+            var data = {"table_id":'{{ table_id }}', "auth":{{auth}}};
+            socket.emit('hit', data);
+        }
+        function _hit(){
+            var data = {"table_id":'{{ table_id }}', "auth":{{auth}}};
+            socket.emit('split_hit', data);
+        }
+        function _stand(){
+            disableSplitUI();
+        }
+
+        function placeBet(){
+           var bet = document.getElementById('inputBet').value;
+           var data = {"bet": bet, "table_id": '{{ table_id }}', "auth":{{auth}}};
+           if(19 < bet){
+               if(bet > 2000) bet = 2000;
+               socket.emit('place_bet', data);
+                $('#bet{{ seat_id }}').html("Bet: $" + bet);
+                disableBettingUI();
+           }
+        }
+        function stand(){
+            disableTurnUI();
+            data = {"seat": {{seat_id}}, "table_id": '{{ table_id }}', "auth":{{auth}}};
+            socket.emit('pass_turn', data);
+        }
+        function split(){
+            var data = {"table_id":'{{ table_id }}', "auth":{{auth}}};
+            socket.emit('split_hand', data);
+        }
+
+        function update_player_UI(data, id){
+            console.log("id: " + id);
+            var nameData = {"seat": id, "name": data['name']};
+            var balanceData = {"seat": id, "balance": data['balance']};
+            var betData = {"seat": id, "bet": data['bet']};
+            var handData = {"seat": id, "hand": data['hand']};
+            seat_changed(nameData);
+            balance_update(balanceData);
+            bet_update(betData);
+            if(data['hand'] == "empty"){
+                return;
+            }else{
+                hand_update(handData);
+            }
+        }
+
+        function seat_changed(msg) {
+            $('div#log').append('<p>Seat_Changed: ' + msg['seat'] +' ' + msg['name'] + '</p>');
+            var nameId = 'name'+msg['seat'];
+            document.getElementById(nameId).innerHTML = msg['name'];
+        }
+
+        function hand_update(data){
+           $('div#log').append('<p>Hand_Update: ' + data['seat'] + ' ' + data['hand'] + '</p>');
+           var handId = '#hand'+data['seat'];
+           var handData = data['hand'];
+           console.log(handData);
+           var totalId = 'total'+data['seat'];
+           var handTotal = 0;
+           $(handId).html("");
+           if(data['hand'] == 'empty') return;
+           Object.keys(handData).forEach(function(k){
+               //$(handId).append('<p>' + k + ': ' + handData[k] + '</p>');
+               $(handId).append('<img src="/static/pictures/cards/'+k+'.png" width=40 alt='+ k + '/>');
+               handTotal += handData[k];
+           });
+
+            document.getElementById(totalId).innerHTML = handTotal;
+        }
+
+        function bet_update(data){
+           var betId = '#bet'+data['seat'];
+           $(betId).html('Bet: $'+ data['bet']);
+        }
+
+        function balance_update(data){
+           var balanceId = '#balance'+data['seat'];
+           $(balanceId).html('$'+data['balance']);
+        }
+
+    function state_change(state){
+        var data = {"table_id":'{{ table_id }}', "auth":{{auth}}};
+        switch (state) {
+            case -2:    //table empty -> begin betting
+                console.log('Pay out round!');
+                socket.emit('check_win', data);
+                break;
+            case -1:    //Betting round
+                socket.emit('verify_game_state', '{{ table_id }}');
+                break;
+            case 7:     //Dealer's turn
+                console.log("Dealer's Turn");
+                break;
+            default:   //any players turn
+                if(state === {{ seat_id }}) enableTurnUI();
+                // TODO: Highlight the player's div if it's their turn
+                // TODO: un-highlight same div once player passes turn | handle for leaving game during turn
+                break;
+        }
+
+        // TODO: Add on window closed functions
+        // TODO: If the current state == players_seatID then pass turn
+        // TODO: make call to socket.emit('leave_table')
+    }
+
+     function beginBettingTimer(end){
+        var data = {"table_id":'{{ table_id }}', "auth":{{auth}}};
+        var clearedDealersHand = false;
+        var finishedRound = false;
+        clearTurnUIs();
+
+        var x = setInterval(function () {
+            var now = new Date().getTime();
+            var distance = end - now;
+            if(distance < 0 && !finishedRound){
+                clearInterval(x);
+                finishedRound = true;
+                $('#timer').html('');
+                socket.emit('deal_cards', data);
+                console.log("timer end");
+                disableBettingUI();
+            }
+            var seconds = Math.floor((distance % FORTY_FIVE_SECONDS) / 1000);
+            if(seconds < 25 && !clearedDealersHand){
+                $('#hand7').html('');
+                $('#total7').html('Total: 0');
+                clearedDealersHand = true;
+                clearCards();
+            }
+            if(seconds > 1){
+                $('#timer').html(seconds +'   !Place your Bets!   '+ seconds);
+            }else{
+                $('#timer').html('!Good Luck!');
+            }
+        }, 1000);
+    }
+
+    function clearTurnUIs(){
+        $('#sturn_UI').hide();
+        $('#turn_UI').hide();
+    }
+
+    function clearCards(){
+        for(var i = 1; i < 8; i++){
+            var handId = '#hand' + i;
+            var totalId = '#total' + i;
+            var split_totalId = '#stotal'+i;
+            var sbetId = '#sbet'+i;
+            var splitId = '#split'+i;
+            var betId = '#bet'+i;
+            $(handId).html('');
+            $(totalId).html('');
+            $(split_totalId).html('');
+            $(sbetId).html('');
+            $(betId).html('Bet: ');
+        }
+        $('#info').html('');
+        $('#split_info').html('');
+    }
+
+    function clearSBetTotal(){
+            var totalId = '#total'+{{ seat_id }};
+            var split_totalId = '#stotal'+{{ seat_id }};
+            var sbetId = '#sbet'+{{ seat_id }};
+            $(totalId).html('');
+            $(split_totalId).html('');
+            $(sbetId).html('');
+    }
+
+    function enableBettingUI(){
+        var playerDiv = '#'+{{ seat_id }};
+        $(playerDiv).removeClass("greybd");
+        $(playerDiv).addClass("lightGreen");
+        $('#betting_UI').show();
+    }
+
+    function disableBettingUI(){
+        var playerDiv = '#'+{{ seat_id }};
+        $(playerDiv).removeClass("lightGreen");
+        $(playerDiv).addClass("greybd");
+        $('#betting_UI').hide();
+    }
+
+    function enableTurnUI(){
+        var playerDiv = '#'+{{ seat_id }};
+        $(playerDiv).removeClass("greybd");
+        $(playerDiv).addClass("lightGreen");
+        $('#turn_UI').show();
+        $('#split').show();
+    }
+
+    function disableTurnUI() {
+        var playerDiv = '#'+{{ seat_id }};
+        $(playerDiv).removeClass("lightGreen");
+        $(playerDiv).addClass("greybd");
+        $('#turn_UI').hide();
+    }
+
+    function enableSplitUI(){
+        $('#turn_UI').hide();
+        var splitId = '#split'+{{ seat_id }};
+        $(splitId).show();
+        $('#sturn_UI').show();
+    }
+    function disableSplitUI(){
+        $('#sturn_UI').hide();
+        $('#turn_UI').show();
+        $('#split').hide();
+    }
+
+  });
+
+    window.onbeforeunload = function(){
+        var data = {"table_id":'{{ table_id }}', "auth":{{auth}}};
+        socket.emit('leave_table', data);
+    };
+
+    </script>
+<body>
+    <h3>{{ table_name }}</h3>
+    <a href="{{ url_for('leave_table', i=auth, table_id=table_id)}}">
+                <button>LEAVE</button></a>
+    <center>
+        <h2 id="split_info"></h2>
+    <h2 id="info"></h2>
+    <br>
+
+    <h3 id="timer"></h3>
+
+        <div class="dealer">
+            Dealer:
+            <div id="hand7"></div>
+            <p id='total7'></p>
+        </div>
+    </center>
+    <br>
+
+    <div class="players">
+        {% for i in range(1,7) %}
+            <div class="seat" id={{i}}>
+                <h4 id='name{{ i }}'></h4>
+                <h4 id='balance{{ i }}'>$</h4>
+
+                {% if (i == seat_id) %}
+                <div id="sturn_UI">
+                    <a id="_hit">Hit</a> | <a id="_stand" >Stand</a>
+                </div>
+                {% endif %}
+                <div id='split{{ i }}'></div>
+                <p id='stotal{{ i }}'>
+                <p id='sbet{{ i }}'></p>
+                <br>
+
+                <div id='hand{{ i }}'></div>
+                <p id='total{{ i }}'></p>
+                <p id='bet{{ i }}'>Bet: </p>
+
+                {% if (i == seat_id) %}
+                    <div id="turn_UI">
+                       <a id="hit">Hit</a> | <a id="stand" >Stand</a>
+                        <a id="split">| Split</a>
+                    </div>
+                    <div id="betting_UI">
+                        [min: 20 max: 2000] <br><label>
+                        <input id="inputBet" type="number" name="bet" min="20" max="2000"></label>
+                        <br>
+                        <button id="placeBet">Place Bet</button>
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+
+{% endblock content %}
+</body>
+</html>
